@@ -1,0 +1,43 @@
+[package]
+name = "cui-sys"
+version = "0.1.0+cui.1.1.0"
+description = "Raw FFI bindings to CUI, modern native UI components for C"
+links = "cui"
+build = "build.rs"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+include = [
+    "build.rs",
+    "bindgen_config.rs",
+    "wrapper.h",
+    "src/**",
+    "CUI/LICENSE",
+    "CUI/CMakeLists.txt",
+    "CUI/include/**",
+    "CUI/src/**",
+    "CUI/third_party/**",
+]
+
+[features]
+default = ["app", "default-fonts", "stb-image"]
+# The window layer (cui_app_*). Turn off to drive CUI from your own engine.
+app = []
+# Embed Inter, Geist and Lucide (about 180 KB).
+default-fonts = []
+# PNG and JPEG loading for cui_image_load.
+stb-image = []
+# Also decode BMP, GIF and TGA.
+image-all-formats = ["stb-image"]
+# Shape static Arabic-script text with OpenType.
+text-shaping = []
+# Window backends other than the native one (Win32 / Cocoa / X11).
+sdl2 = ["app"]
+glfw = ["app"]
+# Regenerate bindings at build time (needs libclang) instead of using the
+# pregenerated src/bindings.rs.
+bindgen = ["dep:bindgen"]
+
+[build-dependencies]
+cc = "1.2"
+bindgen = { version = "0.72", optional = true }

@@ -1,0 +1,32 @@
+[package]
+name = "cui-rs"
+version = "0.1.0"
+description = "Safe Rust bindings to CUI: modern native UI components, immediate mode"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "cui"
+
+[features]
+default = ["app", "default-fonts", "stb-image"]
+app = ["cui-sys/app"]
+default-fonts = ["cui-sys/default-fonts"]
+stb-image = ["cui-sys/stb-image"]
+image-all-formats = ["cui-sys/image-all-formats"]
+text-shaping = ["cui-sys/text-shaping"]
+sdl2 = ["cui-sys/sdl2"]
+glfw = ["cui-sys/glfw"]
+bindgen = ["cui-sys/bindgen"]
+
+[dependencies]
+cui-sys = { path = "../cui-sys", version = "0.1.0", default-features = false }
+
+[[example]]
+name = "hello"
+required-features = ["app"]
+
+[[example]]
+name = "todo"
+required-features = ["app"]

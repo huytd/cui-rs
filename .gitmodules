@@ -1,0 +1,3 @@
+[submodule "cui-sys/CUI"]
+	path = cui-sys/CUI
+	url = https://github.com/yappologistic/CUI

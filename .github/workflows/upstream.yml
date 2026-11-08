@@ -1,0 +1,78 @@
+name: Track upstream CUI
+
+# Checks CUI for new commits every day. When there are any, it moves the
+# submodule, regenerates the bindings and icons, runs the tests and opens a
+# pull request with the upstream log and the header diff.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      rev:
+        description: "CUI commit, tag or branch (default: upstream HEAD)"
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libclang-dev libx11-dev libgl-dev
+
+      - name: Update CUI and regenerate
+        id: update
+        run: |
+          before=$(git -C cui-sys/CUI rev-parse --short HEAD)
+          cargo xtask update ${{ inputs.rev }} | tee update.log
+          after=$(git -C cui-sys/CUI rev-parse --short HEAD)
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          [ "$before" != "$after" ] && echo "changed=true" >> "$GITHUB_OUTPUT" || true
+
+      - name: Test
+        if: steps.update.outputs.changed == 'true'
+        id: test
+        continue-on-error: true
+        run: cargo test 2>&1 | tee test.log
+
+      - name: Write PR body
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          {
+            echo "Moves CUI from \`${{ steps.update.outputs.before }}\` to \`${{ steps.update.outputs.after }}\` and regenerates \`cui-sys/src/bindings.rs\` and \`cui/src/icons.rs\`."
+            echo
+            if [ "${{ steps.test.outcome }}" = "success" ]; then
+              echo "**Tests pass.**"
+            else
+              echo "**Tests fail**: the safe wrapper needs changes for this update."
+            fi
+            echo
+            echo '```'
+            cat update.log
+            echo '```'
+            echo
+            echo "Functions not wrapped by the safe crate yet (available through \`cui::sys\`):"
+            echo '```'
+            cargo xtask coverage 2>&1 | tail -n 1
+            echo '```'
+          } > pr-body.md
+
+      - uses: peter-evans/create-pull-request@v6
+        if: steps.update.outputs.changed == 'true'
+        with:
+          branch: update-cui
+          title: "Update CUI to ${{ steps.update.outputs.after }}"
+          commit-message: "Update CUI to ${{ steps.update.outputs.after }}"
+          body-path: pr-body.md
+          add-paths: |
+            cui-sys/CUI
+            cui-sys/src
+            cui/src/icons.rs

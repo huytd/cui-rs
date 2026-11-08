@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libgl-dev
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo test -p cui-rs --no-default-features
+
+  bindings:
+    # The committed bindings and icons must match the CUI submodule.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libclang-dev libx11-dev
+      - run: cargo xtask check
+      - run: cargo test -p cui-rs --features bindgen
