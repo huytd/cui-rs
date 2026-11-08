@@ -1,6 +1,11 @@
+use crate::builder::{Container, Run, Widget};
 use crate::opts::*;
 use crate::sys;
+use crate::widgets::bool_result;
 use crate::Ui;
+use core::ffi::c_char;
+
+type CStr = *const c_char;
 
 /// A queued toast, to ask whether its action was clicked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -33,24 +38,42 @@ impl<'a> Command<'a> {
     }
 }
 
-/// Popovers, menus, dialogs, sheets, toasts and alerts. Closures of
-/// containers that may be closed run only while they are showing; the
-/// method then returns `Some` with the closure's value.
+/// A popover anchored to the previous component (`cui_popover`).
+pub struct Popover(CStr);
+
+/// A button that opens a menu (`cui_menu`).
+pub struct Menu(CStr);
+
+/// A menu entry (`cui_menu_item`).
+pub struct MenuItem(CStr);
+
+/// A modal dialog (`cui_dialog`).
+pub struct Dialog<'v> {
+    title: CStr,
+    open: &'v mut bool,
+}
+
+/// A panel that slides in from an edge (`cui_sheet`).
+pub struct Sheet<'v> {
+    title: CStr,
+    open: &'v mut bool,
+}
+
+/// A toast notification (`cui_toast`).
+pub struct Toast(CStr);
+
+/// An inline alert (`cui_alert`).
+pub struct Alert(CStr);
+
+/// Popovers, menus, dialogs, sheets, toasts and alerts. Containers that may
+/// be closed run their closure only while showing, and return `Some` with
+/// its value.
 impl<'f> Ui<'f> {
     /// A popover anchored to the previous component. Show it with
     /// [`Ui::popover_open`] or [`Ui::popover_toggle`].
-    pub fn popover<R>(&mut self, id: &str, f: impl FnOnce(&mut Self) -> R) -> Option<R> {
-        self.popover_with(id, PopoverOpts::new(), f)
-    }
-    pub fn popover_with<R>(&mut self, id: &str, opts: PopoverOpts, f: impl FnOnce(&mut Self) -> R) -> Option<R> {
+    pub fn popover<'a>(&mut self, id: &str) -> Container<'_, 'f, PopoverOpts<'a>, Popover> {
         let id = self.s(id);
-        let o = opts.raw(self.arena);
-        if !unsafe { sys::cui_popover_begin(self.ctx, id, &o) } {
-            return None;
-        }
-        let r = f(self);
-        unsafe { sys::cui_popover_end(self.ctx) };
-        Some(r)
+        Container::new(self, PopoverOpts::new(), Popover(id))
     }
     pub fn popover_open(&mut self, id: &str) {
         let id = self.s(id);
@@ -70,18 +93,9 @@ impl<'f> Ui<'f> {
     }
 
     /// A button that opens a menu; build [`Ui::menu_item`]s inside.
-    pub fn menu<R>(&mut self, label: &str, f: impl FnOnce(&mut Self) -> R) -> Option<R> {
-        self.menu_with(label, MenuOpts::new(), f)
-    }
-    pub fn menu_with<R>(&mut self, label: &str, opts: MenuOpts, f: impl FnOnce(&mut Self) -> R) -> Option<R> {
+    pub fn menu<'a>(&mut self, label: &str) -> Container<'_, 'f, MenuOpts<'a>, Menu> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        if !unsafe { sys::cui_menu_begin(self.ctx, l, &o) } {
-            return None;
-        }
-        let r = f(self);
-        unsafe { sys::cui_menu_end(self.ctx) };
-        Some(r)
+        Container::new(self, MenuOpts::new(), Menu(l))
     }
     /// A menu that opens on right click over the previous component.
     pub fn context_menu<R>(&mut self, id: &str, f: impl FnOnce(&mut Self) -> R) -> Option<R> {
@@ -93,14 +107,10 @@ impl<'f> Ui<'f> {
         unsafe { sys::cui_context_menu_end(self.ctx) };
         Some(r)
     }
-    /// Returns true when chosen.
-    pub fn menu_item(&mut self, label: &str) -> bool {
-        self.menu_item_with(label, MenuItemOpts::new())
-    }
-    pub fn menu_item_with(&mut self, label: &str, opts: MenuItemOpts) -> bool {
+    /// A menu entry. `.clicked()` tells whether it was chosen.
+    pub fn menu_item<'a>(&mut self, label: &str) -> Widget<'_, 'f, MenuItemOpts<'a>, MenuItem> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_menu_item_ex(self.ctx, l, &o) }
+        Widget::new(self, MenuItemOpts::new(), MenuItem(l))
     }
     pub fn menu_separator(&mut self) {
         unsafe { sys::cui_menu_separator(self.ctx) }
@@ -116,27 +126,11 @@ impl<'f> Ui<'f> {
     }
 
     /// A modal dialog, shown while `*open` is true. Esc, the close button and
-    /// clicks outside set it to false; the closure gets it too, to close the
-    /// dialog from its own buttons.
-    pub fn dialog<R>(&mut self, title: &str, open: &mut bool, f: impl FnOnce(&mut Self, &mut bool) -> R) -> Option<R> {
-        self.dialog_with(title, open, DialogOpts::new(), f)
-    }
-    pub fn dialog_with<R>(
-        &mut self,
-        title: &str,
-        open: &mut bool,
-        opts: DialogOpts,
-        f: impl FnOnce(&mut Self, &mut bool) -> R,
-    ) -> Option<R> {
+    /// clicks outside set it to false; `.show` passes it to the closure too,
+    /// so the dialog's own buttons can close it.
+    pub fn dialog<'a, 'v>(&mut self, title: &str, open: &'v mut bool) -> Container<'_, 'f, DialogOpts<'a>, Dialog<'v>> {
         let t = self.s(title);
-        let o = opts.raw(self.arena);
-        // CUI only touches `open` inside cui_dialog_begin.
-        if !unsafe { sys::cui_dialog_begin(self.ctx, t, open, &o) } {
-            return None;
-        }
-        let r = f(self, open);
-        unsafe { sys::cui_dialog_end(self.ctx) };
-        Some(r)
+        Container::new(self, DialogOpts::new(), Dialog { title: t, open })
     }
     /// A right-aligned row for dialog actions.
     pub fn dialog_footer<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
@@ -146,34 +140,15 @@ impl<'f> Ui<'f> {
         r
     }
     /// A panel that slides in from an edge, shown while `*open` is true.
-    pub fn sheet<R>(&mut self, title: &str, open: &mut bool, f: impl FnOnce(&mut Self, &mut bool) -> R) -> Option<R> {
-        self.sheet_with(title, open, SheetOpts::new(), f)
-    }
-    pub fn sheet_with<R>(
-        &mut self,
-        title: &str,
-        open: &mut bool,
-        opts: SheetOpts,
-        f: impl FnOnce(&mut Self, &mut bool) -> R,
-    ) -> Option<R> {
+    pub fn sheet<'a, 'v>(&mut self, title: &str, open: &'v mut bool) -> Container<'_, 'f, SheetOpts<'a>, Sheet<'v>> {
         let t = self.s(title);
-        let o = opts.raw(self.arena);
-        if !unsafe { sys::cui_sheet_begin(self.ctx, t, open, &o) } {
-            return None;
-        }
-        let r = f(self, open);
-        unsafe { sys::cui_sheet_end(self.ctx) };
-        Some(r)
+        Container::new(self, SheetOpts::new(), Sheet { title: t, open })
     }
 
-    /// Queues a toast notification.
-    pub fn toast(&mut self, title: &str) -> ToastHandle {
-        self.toast_with(title, ToastOpts::new())
-    }
-    pub fn toast_with(&mut self, title: &str, opts: ToastOpts) -> ToastHandle {
+    /// Queues a toast notification. `.show()` returns its handle.
+    pub fn toast<'a>(&mut self, title: &str) -> Widget<'_, 'f, ToastOpts<'a>, Toast> {
         let t = self.s(title);
-        let o = opts.raw(self.arena);
-        ToastHandle(unsafe { sys::cui_toast_ex(self.ctx, t, &o) })
+        Widget::new(self, ToastOpts::new(), Toast(t))
     }
     pub fn toast_action_clicked(&mut self, toast: ToastHandle) -> bool {
         unsafe { sys::cui_toast_action_clicked(self.ctx, toast.0) }
@@ -182,14 +157,10 @@ impl<'f> Ui<'f> {
         unsafe { sys::cui_toast_dismiss(self.ctx, toast.0) }
     }
 
-    /// Inline alert. Returns false once dismissed (when dismissible).
-    pub fn alert(&mut self, title: &str) -> bool {
-        self.alert_with(title, AlertOpts::new())
-    }
-    pub fn alert_with(&mut self, title: &str, opts: AlertOpts) -> bool {
+    /// Inline alert. `.show()` returns false once it is dismissed.
+    pub fn alert<'a>(&mut self, title: &str) -> Widget<'_, 'f, AlertOpts<'a>, Alert> {
         let t = self.s(title);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_alert_ex(self.ctx, t, &o) }
+        Widget::new(self, AlertOpts::new(), Alert(t))
     }
 
     /// Spotlight style command palette. Returns the chosen command's index.
@@ -208,3 +179,85 @@ impl<'f> Ui<'f> {
         usize::try_from(i).ok()
     }
 }
+
+impl<'f> Container<'_, 'f, PopoverOpts<'_>, Popover> {
+    pub fn show<R>(self, f: impl FnOnce(&mut Ui<'f>) -> R) -> Option<R> {
+        let Container { ui, opts, c } = self;
+        let (ctx, o) = (ui.ctx, opts.raw(ui.arena));
+        if !unsafe { sys::cui_popover_begin(ctx, c.0, &o) } {
+            return None;
+        }
+        let r = f(ui);
+        unsafe { sys::cui_popover_end(ctx) };
+        Some(r)
+    }
+}
+
+impl<'f> Container<'_, 'f, MenuOpts<'_>, Menu> {
+    pub fn show<R>(self, f: impl FnOnce(&mut Ui<'f>) -> R) -> Option<R> {
+        let Container { ui, opts, c } = self;
+        let (ctx, o) = (ui.ctx, opts.raw(ui.arena));
+        if !unsafe { sys::cui_menu_begin(ctx, c.0, &o) } {
+            return None;
+        }
+        let r = f(ui);
+        unsafe { sys::cui_menu_end(ctx) };
+        Some(r)
+    }
+}
+
+impl<'f> Container<'_, 'f, DialogOpts<'_>, Dialog<'_>> {
+    /// Builds the dialog while it is open. The closure gets `open` back so
+    /// its buttons can close the dialog.
+    pub fn show<R>(self, f: impl FnOnce(&mut Ui<'f>, &mut bool) -> R) -> Option<R> {
+        let Container { ui, opts, c } = self;
+        let (ctx, o) = (ui.ctx, opts.raw(ui.arena));
+        // CUI only touches `open` inside cui_dialog_begin.
+        if !unsafe { sys::cui_dialog_begin(ctx, c.title, c.open, &o) } {
+            return None;
+        }
+        let r = f(ui, c.open);
+        unsafe { sys::cui_dialog_end(ctx) };
+        Some(r)
+    }
+}
+
+impl<'f> Container<'_, 'f, SheetOpts<'_>, Sheet<'_>> {
+    /// Builds the sheet while it is open. The closure gets `open` back.
+    pub fn show<R>(self, f: impl FnOnce(&mut Ui<'f>, &mut bool) -> R) -> Option<R> {
+        let Container { ui, opts, c } = self;
+        let (ctx, o) = (ui.ctx, opts.raw(ui.arena));
+        if !unsafe { sys::cui_sheet_begin(ctx, c.title, c.open, &o) } {
+            return None;
+        }
+        let r = f(ui, c.open);
+        unsafe { sys::cui_sheet_end(ctx) };
+        Some(r)
+    }
+}
+
+impl Run<MenuItemOpts<'_>> for MenuItem {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &MenuItemOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_menu_item_ex(ui.ctx, self.0, &o) }
+    }
+}
+
+impl Run<ToastOpts<'_>> for Toast {
+    type Output = ToastHandle;
+    fn run(self, ui: &mut Ui<'_>, opts: &ToastOpts<'_>) -> ToastHandle {
+        let o = opts.raw(ui.arena);
+        ToastHandle(unsafe { sys::cui_toast_ex(ui.ctx, self.0, &o) })
+    }
+}
+
+impl Run<AlertOpts<'_>> for Alert {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &AlertOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_alert_ex(ui.ctx, self.0, &o) }
+    }
+}
+
+bool_result!(clicked, "Draws it; true once, when chosen.": MenuItem => MenuItemOpts);

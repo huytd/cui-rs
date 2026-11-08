@@ -1,20 +1,126 @@
+use crate::builder::{IntoOpt, Run, TextTarget, Widget};
 use crate::opts::*;
 use crate::sys;
 use crate::types::*;
-use crate::{TextBuffer, Ui};
+use crate::Ui;
+use core::ffi::c_char;
+use core::fmt;
+
+type CStr = *const c_char;
+type CStrs = *const *const c_char;
+
+/// Body text (`cui_text`).
+pub struct Text(CStr);
+
+/// A button (`cui_button`).
+pub struct Button(CStr);
+
+/// A button with only an icon (`cui_icon_button`).
+pub struct IconButton(CStr);
+
+/// A segmented control (`cui_segmented`).
+pub struct Segmented<'v> {
+    id: CStr,
+    items: CStrs,
+    count: i32,
+    index: &'v mut usize,
+}
+
+/// A checkbox or switch.
+pub struct Check<'v> {
+    label: CStr,
+    value: &'v mut bool,
+    switch: bool,
+}
+
+/// A radio button for one option.
+pub struct Radio<'v, T> {
+    label: CStr,
+    value: &'v mut T,
+    option: T,
+}
+
+/// A slider (`cui_slider`).
+pub struct Slider<'v> {
+    label: CStr,
+    value: &'v mut f32,
+    min: f32,
+    max: f32,
+}
+
+/// A toggleable chip (`cui_chip`).
+pub struct Chip<'v> {
+    label: CStr,
+    selected: &'v mut bool,
+}
+
+#[derive(Clone, Copy)]
+enum FieldKind {
+    Input,
+    TextArea,
+    Search,
+}
+
+/// A text field, text area or search field.
+pub struct TextField<'v, T: ?Sized> {
+    id: CStr,
+    text: &'v mut T,
+    kind: FieldKind,
+}
+
+/// Tags stored comma separated (`cui_tag_input`).
+pub struct TagInput<'v, T: ?Sized> {
+    id: CStr,
+    text: &'v mut T,
+}
+
+/// A number field with steppers (`cui_number`).
+pub struct Number<'v> {
+    id: CStr,
+    value: &'v mut f64,
+    min: f64,
+    max: f64,
+}
+
+/// A dropdown (`cui_select`).
+pub struct Select<'v> {
+    id: CStr,
+    items: CStrs,
+    count: i32,
+    index: &'v mut Option<usize>,
+}
+
+/// A date field with a calendar popup (`cui_date_picker`).
+pub struct DatePicker<'v> {
+    id: CStr,
+    value: &'v mut Date,
+}
+
+/// Tabs (`cui_tabs`).
+pub struct Tabs<'v> {
+    id: CStr,
+    items: CStrs,
+    count: i32,
+    index: &'v mut usize,
+}
+
+/// A sidebar item (`cui_nav_item`).
+pub struct NavItem(CStr);
 
 /// Text, buttons, selection controls, text input, pickers and navigation.
 impl<'f> Ui<'f> {
     // ---- text ----
 
-    /// Body text that wraps to the available width.
-    pub fn text(&mut self, text: &str) {
-        self.text_with(text, TextOpts::new())
-    }
-    pub fn text_with(&mut self, text: &str, opts: TextOpts) {
+    /// Body text that wraps to the available width. For formatted text use
+    /// [`text!`](crate::text).
+    pub fn text<'a>(&mut self, text: &str) -> Widget<'_, 'f, TextOpts<'a>, Text> {
         let t = self.s(text);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_text_ex(self.ctx, t, &o) }
+        Widget::new(self, TextOpts::new(), Text(t))
+    }
+    /// Formatted text without an intermediate `String`; [`text!`](crate::text) calls this.
+    pub fn text_fmt<'a>(&mut self, args: fmt::Arguments<'_>) -> Widget<'_, 'f, TextOpts<'a>, Text> {
+        let t = self.arena.fmt(args);
+        Widget::new(self, TextOpts::new(), Text(t))
     }
     /// Level 1..=4.
     pub fn heading(&mut self, text: &str, level: i32) {
@@ -52,40 +158,32 @@ impl<'f> Ui<'f> {
         unsafe { sys::cui_link(self.ctx, t) }
     }
     /// An icon from [`crate::icons`]; a zero color means the foreground.
-    pub fn icon(&mut self, icon: &str, size: f32, color: Color) {
+    pub fn icon(&mut self, icon: &str, size: impl IntoOpt<f32>, color: impl IntoOpt<Color>) {
         let t = self.s(icon);
-        unsafe { sys::cui_icon(self.ctx, t, size, color.into()) }
+        unsafe { sys::cui_icon(self.ctx, t, size.into_opt(), color.into_opt().into()) }
     }
 
     // ---- buttons ----
 
-    /// Returns true once, when clicked.
-    pub fn button(&mut self, label: &str) -> bool {
-        self.button_with(label, ButtonOpts::new())
-    }
-    pub fn button_with(&mut self, label: &str, opts: ButtonOpts) -> bool {
+    /// A button. `.clicked()` draws it and tells whether it was clicked.
+    pub fn button<'a>(&mut self, label: &str) -> Widget<'_, 'f, ButtonOpts<'a>, Button> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_button_ex(self.ctx, l, &o) }
+        Widget::new(self, ButtonOpts::new(), Button(l))
     }
-    /// A square button with only an icon; the tooltip gives it a name.
-    pub fn icon_button(&mut self, icon: &str, tooltip: &str) -> bool {
-        self.icon_button_with(icon, ButtonOpts::new().tooltip(tooltip))
-    }
-    pub fn icon_button_with(&mut self, icon: &str, opts: ButtonOpts) -> bool {
+    /// A square button with only an icon; give it a `.tooltip(...)` so it has a name.
+    pub fn icon_button<'a>(&mut self, icon: &str) -> Widget<'_, 'f, ButtonOpts<'a>, IconButton> {
         let i = self.s(icon);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_icon_button_ex(self.ctx, i, &o) }
+        Widget::new(self, ButtonOpts::new(), IconButton(i))
     }
-    /// A row of options with a gliding highlight. Returns true when changed.
-    pub fn segmented(&mut self, id: &str, items: &[&str], index: &mut usize) -> bool {
-        self.segmented_with(id, items, index, SegmentedOpts::new())
-    }
-    pub fn segmented_with(&mut self, id: &str, items: &[&str], index: &mut usize, opts: SegmentedOpts) -> bool {
-        let id = self.s(id);
-        let it = self.strs(items);
-        let o = opts.raw(self.arena);
-        with_index(index, |i| unsafe { sys::cui_segmented_ex(self.ctx, id, it, items.len() as i32, i, &o) })
+    /// A row of options with a gliding highlight.
+    pub fn segmented<'a, 'v>(
+        &mut self,
+        id: &str,
+        items: &[&str],
+        index: &'v mut usize,
+    ) -> Widget<'_, 'f, SegmentedOpts<'a>, Segmented<'v>> {
+        let (id, it) = (self.s(id), self.strs(items));
+        Widget::new(self, SegmentedOpts::new(), Segmented { id, items: it, count: items.len() as i32, index })
     }
     /// Connected buttons: put buttons inside.
     pub fn button_group<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
@@ -96,8 +194,7 @@ impl<'f> Ui<'f> {
     }
     /// Copies `text` to the clipboard and confirms with a check.
     pub fn copy_button(&mut self, id: &str, text: &str) -> bool {
-        let id = self.s(id);
-        let t = self.s(text);
+        let (id, t) = (self.s(id), self.s(text));
         unsafe { sys::cui_copy_button(self.ctx, id, t) }
     }
     /// Sun and moon button that toggles the theme.
@@ -107,133 +204,94 @@ impl<'f> Ui<'f> {
 
     // ---- selection controls ----
 
-    /// Returns true when toggled.
-    pub fn checkbox(&mut self, label: &str, value: &mut bool) -> bool {
-        self.checkbox_with(label, value, CheckOpts::new())
-    }
-    pub fn checkbox_with(&mut self, label: &str, value: &mut bool, opts: CheckOpts) -> bool {
+    pub fn checkbox<'a, 'v>(&mut self, label: &str, value: &'v mut bool) -> Widget<'_, 'f, CheckOpts<'a>, Check<'v>> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_checkbox_ex(self.ctx, l, value, &o) }
+        Widget::new(self, CheckOpts::new(), Check { label: l, value, switch: false })
     }
-    pub fn switch(&mut self, label: &str, value: &mut bool) -> bool {
-        self.switch_with(label, value, CheckOpts::new())
-    }
-    pub fn switch_with(&mut self, label: &str, value: &mut bool, opts: CheckOpts) -> bool {
+    pub fn switch<'a, 'v>(&mut self, label: &str, value: &'v mut bool) -> Widget<'_, 'f, CheckOpts<'a>, Check<'v>> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_switch_ex(self.ctx, l, value, &o) }
+        Widget::new(self, CheckOpts::new(), Check { label: l, value, switch: true })
     }
     /// One radio button: selected when `*value == option`, and clicking sets
-    /// `*value = option`. Works with any comparable value (an enum, say).
-    pub fn radio<T: PartialEq + Copy>(&mut self, label: &str, value: &mut T, option: T) -> bool {
-        self.radio_with(label, value, option, CheckOpts::new())
-    }
-    pub fn radio_with<T: PartialEq + Copy>(&mut self, label: &str, value: &mut T, option: T, opts: CheckOpts) -> bool {
+    /// `*value = option`. Works with any comparable value, an enum say.
+    pub fn radio<'a, 'v, T: PartialEq + Copy>(
+        &mut self,
+        label: &str,
+        value: &'v mut T,
+        option: T,
+    ) -> Widget<'_, 'f, CheckOpts<'a>, Radio<'v, T>> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        let mut cur = (*value == option) as i32;
-        let clicked = unsafe { sys::cui_radio_ex(self.ctx, l, &mut cur, 1, &o) };
-        if cur == 1 {
-            *value = option;
-        }
-        clicked
+        Widget::new(self, CheckOpts::new(), Radio { label: l, value, option })
     }
     pub fn radio_group(&mut self, id: &str, items: &[&str], index: &mut usize) -> bool {
-        let id = self.s(id);
-        let it = self.strs(items);
+        let (id, it) = (self.s(id), self.strs(items));
         with_index(index, |i| unsafe { sys::cui_radio_group(self.ctx, id, it, items.len() as i32, i) })
     }
-    /// Returns true while the value changes.
-    pub fn slider(&mut self, label: &str, value: &mut f32, min: f32, max: f32) -> bool {
-        self.slider_with(label, value, min, max, SliderOpts::new())
-    }
-    pub fn slider_with(&mut self, label: &str, value: &mut f32, min: f32, max: f32, opts: SliderOpts) -> bool {
+    pub fn slider<'a, 'v>(
+        &mut self,
+        label: &str,
+        value: &'v mut f32,
+        min: impl IntoOpt<f32>,
+        max: impl IntoOpt<f32>,
+    ) -> Widget<'_, 'f, SliderOpts<'a>, Slider<'v>> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_slider_ex(self.ctx, l, value, min, max, &o) }
+        Widget::new(self, SliderOpts::new(), Slider { label: l, value, min: min.into_opt(), max: max.into_opt() })
     }
-    pub fn range_slider(&mut self, label: &str, lo: &mut f32, hi: &mut f32, min: f32, max: f32) -> bool {
+    pub fn range_slider(&mut self, label: &str, lo: &mut f32, hi: &mut f32, min: impl IntoOpt<f32>, max: impl IntoOpt<f32>) -> bool {
         let l = self.s(label);
-        unsafe { sys::cui_range_slider(self.ctx, l, lo, hi, min, max) }
+        unsafe { sys::cui_range_slider(self.ctx, l, lo, hi, min.into_opt(), max.into_opt()) }
     }
     /// Stars, 0..=max.
     pub fn rating(&mut self, id: &str, value: &mut i32, max: i32) -> bool {
         let id = self.s(id);
         unsafe { sys::cui_rating(self.ctx, id, value, max) }
     }
-    pub fn chip(&mut self, label: &str, selected: &mut bool) -> bool {
-        self.chip_with(label, selected, ChipOpts::new())
-    }
-    pub fn chip_with(&mut self, label: &str, selected: &mut bool, opts: ChipOpts) -> bool {
+    pub fn chip<'a, 'v>(&mut self, label: &str, selected: &'v mut bool) -> Widget<'_, 'f, ChipOpts<'a>, Chip<'v>> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_chip_ex(self.ctx, l, selected, &o) }
+        Widget::new(self, ChipOpts::new(), Chip { label: l, selected })
     }
 
     // ---- text input ----
 
-    /// Single line text field.
-    pub fn input(&mut self, id: &str, buf: &mut TextBuffer) -> InputEvents {
-        self.input_with(id, buf, InputOpts::new())
-    }
-    pub fn input_with(&mut self, id: &str, buf: &mut TextBuffer, opts: InputOpts) -> InputEvents {
-        let id = self.s(id);
-        let o = opts.raw(self.arena);
-        let b = buf.as_mut_bytes();
-        InputEvents(unsafe { sys::cui_input_ex(self.ctx, id, b.as_mut_ptr().cast(), b.len(), &o) })
+    /// Single line text field, editing a `String` or a [`crate::TextBuffer`].
+    pub fn input<'a, 'v, T: TextTarget + ?Sized>(&mut self, id: &str, text: &'v mut T) -> Widget<'_, 'f, InputOpts<'a>, TextField<'v, T>> {
+        self.field(id, text, FieldKind::Input)
     }
     /// Multi-line text area with word wrap.
-    pub fn textarea(&mut self, id: &str, buf: &mut TextBuffer) -> InputEvents {
-        self.textarea_with(id, buf, InputOpts::new())
-    }
-    pub fn textarea_with(&mut self, id: &str, buf: &mut TextBuffer, opts: InputOpts) -> InputEvents {
-        let id = self.s(id);
-        let o = opts.raw(self.arena);
-        let b = buf.as_mut_bytes();
-        InputEvents(unsafe { sys::cui_textarea_ex(self.ctx, id, b.as_mut_ptr().cast(), b.len(), &o) })
+    pub fn textarea<'a, 'v, T: TextTarget + ?Sized>(&mut self, id: &str, text: &'v mut T) -> Widget<'_, 'f, InputOpts<'a>, TextField<'v, T>> {
+        self.field(id, text, FieldKind::TextArea)
     }
     /// Search field with a search icon and a clear button.
-    pub fn search(&mut self, id: &str, buf: &mut TextBuffer) -> InputEvents {
-        self.search_with(id, buf, InputOpts::new())
+    pub fn search<'a, 'v, T: TextTarget + ?Sized>(&mut self, id: &str, text: &'v mut T) -> Widget<'_, 'f, InputOpts<'a>, TextField<'v, T>> {
+        self.field(id, text, FieldKind::Search)
     }
-    pub fn search_with(&mut self, id: &str, buf: &mut TextBuffer, opts: InputOpts) -> InputEvents {
+    fn field<'a, 'v, T: TextTarget + ?Sized>(&mut self, id: &str, text: &'v mut T, kind: FieldKind) -> Widget<'_, 'f, InputOpts<'a>, TextField<'v, T>> {
         let id = self.s(id);
-        let o = opts.raw(self.arena);
-        let b = buf.as_mut_bytes();
-        InputEvents(unsafe { sys::cui_search_ex(self.ctx, id, b.as_mut_ptr().cast(), b.len(), &o) })
+        Widget::new(self, InputOpts::new(), TextField { id, text, kind })
     }
-    /// Tags stored comma separated in `buf`.
-    pub fn tag_input(&mut self, id: &str, buf: &mut TextBuffer, label: Option<&str>) -> bool {
+    /// Tags stored comma separated in `text`.
+    pub fn tag_input<'a, 'v, T: TextTarget + ?Sized>(&mut self, id: &str, text: &'v mut T) -> Widget<'_, 'f, TagOpts<'a>, TagInput<'v, T>> {
         let id = self.s(id);
-        let o = sys::cui_tag_opts { label: self.os(label), ..Default::default() };
-        let b = buf.as_mut_bytes();
-        unsafe { sys::cui_tag_input_ex(self.ctx, id, b.as_mut_ptr().cast(), b.len(), &o) }
+        Widget::new(self, TagOpts::new(), TagInput { id, text })
     }
-    /// Number field with steppers. Returns true when changed.
-    pub fn number(&mut self, id: &str, value: &mut f64, min: f64, max: f64) -> bool {
-        self.number_with(id, value, min, max, NumberOpts::new())
-    }
-    pub fn number_with(&mut self, id: &str, value: &mut f64, min: f64, max: f64, opts: NumberOpts) -> bool {
+    /// Number field with steppers.
+    pub fn number<'a, 'v>(
+        &mut self,
+        id: &str,
+        value: &'v mut f64,
+        min: impl IntoOpt<f64>,
+        max: impl IntoOpt<f64>,
+    ) -> Widget<'_, 'f, NumberOpts<'a>, Number<'v>> {
         let id = self.s(id);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_number_ex(self.ctx, id, value, min, max, &o) }
+        Widget::new(self, NumberOpts::new(), Number { id, value, min: min.into_opt(), max: max.into_opt() })
     }
 
     // ---- pickers ----
 
-    /// Dropdown. `None` shows the placeholder. Returns true when changed.
-    pub fn select(&mut self, id: &str, items: &[&str], index: &mut Option<usize>) -> bool {
-        self.select_with(id, items, index, SelectOpts::new())
-    }
-    pub fn select_with(&mut self, id: &str, items: &[&str], index: &mut Option<usize>, opts: SelectOpts) -> bool {
-        let id = self.s(id);
-        let it = self.strs(items);
-        let o = opts.raw(self.arena);
-        let mut i = index.map_or(-1, |i| i as i32);
-        let changed = unsafe { sys::cui_select_ex(self.ctx, id, it, items.len() as i32, &mut i, &o) };
-        *index = usize::try_from(i).ok();
-        changed
+    /// Dropdown. `None` shows the placeholder.
+    pub fn select<'a, 'v>(&mut self, id: &str, items: &[&str], index: &'v mut Option<usize>) -> Widget<'_, 'f, SelectOpts<'a>, Select<'v>> {
+        let (id, it) = (self.s(id), self.strs(items));
+        Widget::new(self, SelectOpts::new(), Select { id, items: it, count: items.len() as i32, index })
     }
     pub fn calendar(&mut self, id: &str, value: &mut Date) -> bool {
         let id = self.s(id);
@@ -242,16 +300,9 @@ impl<'f> Ui<'f> {
         *value = d.into();
         changed
     }
-    pub fn date_picker(&mut self, id: &str, value: &mut Date) -> bool {
-        self.date_picker_with(id, value, DateOpts::new())
-    }
-    pub fn date_picker_with(&mut self, id: &str, value: &mut Date, opts: DateOpts) -> bool {
+    pub fn date_picker<'a, 'v>(&mut self, id: &str, value: &'v mut Date) -> Widget<'_, 'f, DateOpts<'a>, DatePicker<'v>> {
         let id = self.s(id);
-        let o = opts.raw(self.arena);
-        let mut d = (*value).into();
-        let changed = unsafe { sys::cui_date_picker_ex(self.ctx, id, &mut d, &o) };
-        *value = d.into();
-        changed
+        Widget::new(self, DateOpts::new(), DatePicker { id, value })
     }
     pub fn color_picker(&mut self, id: &str, value: &mut Color) -> bool {
         let id = self.s(id);
@@ -263,23 +314,14 @@ impl<'f> Ui<'f> {
 
     // ---- navigation ----
 
-    pub fn tabs(&mut self, id: &str, items: &[&str], index: &mut usize) -> bool {
-        self.tabs_with(id, items, index, TabsOpts::new())
+    pub fn tabs<'a, 'v>(&mut self, id: &str, items: &[&str], index: &'v mut usize) -> Widget<'_, 'f, TabsOpts<'a>, Tabs<'v>> {
+        let (id, it) = (self.s(id), self.strs(items));
+        Widget::new(self, TabsOpts::new(), Tabs { id, items: it, count: items.len() as i32, index })
     }
-    pub fn tabs_with(&mut self, id: &str, items: &[&str], index: &mut usize, opts: TabsOpts) -> bool {
-        let id = self.s(id);
-        let it = self.strs(items);
-        let o = opts.raw(self.arena);
-        with_index(index, |i| unsafe { sys::cui_tabs_ex(self.ctx, id, it, items.len() as i32, i, &o) })
-    }
-    /// Sidebar item. Returns true when clicked.
-    pub fn nav_item(&mut self, label: &str, selected: bool) -> bool {
-        self.nav_item_with(label, NavOpts::new().selected(selected))
-    }
-    pub fn nav_item_with(&mut self, label: &str, opts: NavOpts) -> bool {
+    /// Sidebar item. `.clicked()` tells whether it was clicked.
+    pub fn nav_item<'a>(&mut self, label: &str) -> Widget<'_, 'f, NavOpts<'a>, NavItem> {
         let l = self.s(label);
-        let o = opts.raw(self.arena);
-        unsafe { sys::cui_nav_item_ex(self.ctx, l, &o) }
+        Widget::new(self, NavOpts::new(), NavItem(l))
     }
     pub fn nav_section(&mut self, title: &str) {
         let t = self.s(title);
@@ -302,11 +344,213 @@ impl<'f> Ui<'f> {
 }
 
 /// Runs a C call that edits an `int` index through a `usize`.
-fn with_index(index: &mut usize, f: impl FnOnce(&mut i32) -> bool) -> bool {
+pub(crate) fn with_index(index: &mut usize, f: impl FnOnce(&mut i32) -> bool) -> bool {
     let mut i = *index as i32;
     let r = f(&mut i);
     if let Ok(v) = usize::try_from(i) {
         *index = v;
     }
     r
+}
+
+impl Run<TextOpts<'_>> for Text {
+    type Output = ();
+    fn run(self, ui: &mut Ui<'_>, opts: &TextOpts<'_>) {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_text_ex(ui.ctx, self.0, &o) }
+    }
+}
+
+impl Run<ButtonOpts<'_>> for Button {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &ButtonOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_button_ex(ui.ctx, self.0, &o) }
+    }
+}
+
+impl Run<ButtonOpts<'_>> for IconButton {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &ButtonOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_icon_button_ex(ui.ctx, self.0, &o) }
+    }
+}
+
+impl Run<SegmentedOpts<'_>> for Segmented<'_> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &SegmentedOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        with_index(self.index, |i| unsafe { sys::cui_segmented_ex(ui.ctx, self.id, self.items, self.count, i, &o) })
+    }
+}
+
+impl Run<CheckOpts<'_>> for Check<'_> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &CheckOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        if self.switch {
+            unsafe { sys::cui_switch_ex(ui.ctx, self.label, self.value, &o) }
+        } else {
+            unsafe { sys::cui_checkbox_ex(ui.ctx, self.label, self.value, &o) }
+        }
+    }
+}
+
+impl<T: PartialEq + Copy> Run<CheckOpts<'_>> for Radio<'_, T> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &CheckOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        let mut cur = (*self.value == self.option) as i32;
+        let clicked = unsafe { sys::cui_radio_ex(ui.ctx, self.label, &mut cur, 1, &o) };
+        if cur == 1 {
+            *self.value = self.option;
+        }
+        clicked
+    }
+}
+
+impl Run<SliderOpts<'_>> for Slider<'_> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &SliderOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_slider_ex(ui.ctx, self.label, self.value, self.min, self.max, &o) }
+    }
+}
+
+impl Run<ChipOpts<'_>> for Chip<'_> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &ChipOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_chip_ex(ui.ctx, self.label, self.selected, &o) }
+    }
+}
+
+impl<T: TextTarget + ?Sized> Run<InputOpts<'_>> for TextField<'_, T> {
+    type Output = InputEvents;
+    fn run(self, ui: &mut Ui<'_>, opts: &InputOpts<'_>) -> InputEvents {
+        let o = opts.raw(ui.arena);
+        let f = match self.kind {
+            FieldKind::Input => sys::cui_input_ex,
+            FieldKind::TextArea => sys::cui_textarea_ex,
+            FieldKind::Search => sys::cui_search_ex,
+        };
+        let (ctx, id) = (ui.ctx, self.id);
+        InputEvents(self.text.edit(&mut ui.arena.text, |b| unsafe { f(ctx, id, b.as_mut_ptr().cast(), b.len(), &o) }))
+    }
+}
+
+impl<T: TextTarget + ?Sized> Run<TagOpts<'_>> for TagInput<'_, T> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &TagOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        let (ctx, id) = (ui.ctx, self.id);
+        self.text.edit(&mut ui.arena.text, |b| unsafe { sys::cui_tag_input_ex(ctx, id, b.as_mut_ptr().cast(), b.len(), &o) })
+    }
+}
+
+impl Run<NumberOpts<'_>> for Number<'_> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &NumberOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_number_ex(ui.ctx, self.id, self.value, self.min, self.max, &o) }
+    }
+}
+
+impl Run<SelectOpts<'_>> for Select<'_> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &SelectOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        let mut i = self.index.map_or(-1, |i| i as i32);
+        let changed = unsafe { sys::cui_select_ex(ui.ctx, self.id, self.items, self.count, &mut i, &o) };
+        *self.index = usize::try_from(i).ok();
+        changed
+    }
+}
+
+impl Run<DateOpts<'_>> for DatePicker<'_> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &DateOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        let mut d = (*self.value).into();
+        let changed = unsafe { sys::cui_date_picker_ex(ui.ctx, self.id, &mut d, &o) };
+        *self.value = d.into();
+        changed
+    }
+}
+
+impl Run<TabsOpts<'_>> for Tabs<'_> {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &TabsOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        with_index(self.index, |i| unsafe { sys::cui_tabs_ex(ui.ctx, self.id, self.items, self.count, i, &o) })
+    }
+}
+
+impl Run<NavOpts<'_>> for NavItem {
+    type Output = bool;
+    fn run(self, ui: &mut Ui<'_>, opts: &NavOpts<'_>) -> bool {
+        let o = opts.raw(ui.arena);
+        unsafe { sys::cui_nav_item_ex(ui.ctx, self.0, &o) }
+    }
+}
+
+// ---- result shortcuts ----
+
+/// `.clicked()` / `.changed()` on widgets whose result is a bool.
+macro_rules! bool_result {
+    ($method:ident, $doc:literal: $($c:ty => $o:ident),* $(,)?) => {$(
+        impl<'a> Widget<'_, '_, $o<'a>, $c> {
+            #[doc = $doc]
+            pub fn $method(self) -> bool {
+                self.show()
+            }
+        }
+    )*};
+}
+pub(crate) use bool_result;
+
+bool_result!(clicked, "Draws it; true once, when clicked.":
+    Button => ButtonOpts, IconButton => ButtonOpts, NavItem => NavOpts);
+bool_result!(changed, "Draws it; true when the user changed the value.":
+    Segmented<'_> => SegmentedOpts, Check<'_> => CheckOpts, Slider<'_> => SliderOpts, Chip<'_> => ChipOpts,
+    Number<'_> => NumberOpts, Select<'_> => SelectOpts, DatePicker<'_> => DateOpts, Tabs<'_> => TabsOpts,
+    TagInput<'_, String> => TagOpts, TagInput<'_, crate::TextBuffer> => TagOpts);
+
+impl<'a, T: PartialEq + Copy> Widget<'_, '_, CheckOpts<'a>, Radio<'_, T>> {
+    /// Draws it; true when clicked.
+    pub fn clicked(self) -> bool {
+        self.show()
+    }
+}
+
+impl<'a, C: Run<InputOpts<'a>, Output = InputEvents>> Widget<'_, '_, InputOpts<'a>, C> {
+    /// Draws it; true when the text changed.
+    pub fn changed(self) -> bool {
+        self.show().changed()
+    }
+    /// Draws it; true when Enter was pressed.
+    pub fn submitted(self) -> bool {
+        self.show().submitted()
+    }
+}
+
+impl<'a, C: Run<ButtonOpts<'a>>> Widget<'_, '_, ButtonOpts<'a>, C> {
+    /// The one main action.
+    pub fn primary(self) -> Self {
+        self.variant(ButtonVariant::Primary)
+    }
+    /// Neutral filled.
+    pub fn secondary(self) -> Self {
+        self.variant(ButtonVariant::Secondary)
+    }
+    pub fn outline(self) -> Self {
+        self.variant(ButtonVariant::Outline)
+    }
+    pub fn ghost(self) -> Self {
+        self.variant(ButtonVariant::Ghost)
+    }
+    pub fn danger(self) -> Self {
+        self.variant(ButtonVariant::Danger)
+    }
 }

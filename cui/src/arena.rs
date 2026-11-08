@@ -9,6 +9,9 @@ pub(crate) struct Arena {
     cur: usize,
     ptrs: Vec<Vec<*const c_char>>,
     ptrs_used: usize,
+    fmt_buf: String,
+    /// Scratch buffer for text fields that edit a `String`.
+    pub text: Vec<u8>,
 }
 
 const CHUNK: usize = 16 * 1024;
@@ -44,6 +47,17 @@ impl Arena {
             self.chunks.push(Vec::with_capacity(need.max(CHUNK)));
             self.cur = self.chunks.len() - 1;
         }
+    }
+
+    /// Formats into frame memory without allocating once warmed up.
+    pub fn fmt(&mut self, args: core::fmt::Arguments<'_>) -> *const c_char {
+        use core::fmt::Write;
+        let mut buf = core::mem::take(&mut self.fmt_buf);
+        buf.clear();
+        let _ = buf.write_fmt(args);
+        let p = self.str(&buf);
+        self.fmt_buf = buf;
+        p
     }
 
     pub fn opt_str(&mut self, s: Option<&str>) -> *const c_char {

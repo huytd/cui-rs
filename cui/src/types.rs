@@ -53,11 +53,6 @@ macro_rules! c_enum {
             fn default() -> Self { [$(Self::$v),*][0] }
         }
 
-        impl crate::opts::OptArg for $name {
-            type In = $name;
-            fn from_arg(v: $name) -> $name { v }
-        }
-
         impl ToC<sys::$cty> for $name {
             fn to_c(&self, _: &mut Arena) -> sys::$cty { self.to_raw() }
         }

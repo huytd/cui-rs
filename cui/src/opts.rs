@@ -1,44 +1,23 @@
 //! Options for components, the Rust form of CUI's named arguments.
 //!
 //! C:    `cui_button(ui, "Save", .variant = CUI_BUTTON_PRIMARY, .icon = CUI_ICON_CHECK)`
-//! Rust: `ui.button_with("Save", ButtonOpts::new().variant(ButtonVariant::Primary).icon(icons::CHECK))`
+//! Rust: `ui.button("Save").variant(ButtonVariant::Primary).icon(icons::CHECK)`
 //!
-//! Every field has a setter with the C field's name, and anything left out
-//! keeps CUI's default, exactly like the C macros.
+//! Every field has a setter with the C field's name, on the component's
+//! builder and on the options struct itself (for presets you pass with
+//! `.opts(...)`). Anything left out keeps CUI's default, like the C macros.
 
 use crate::arena::Arena;
+use crate::builder::{Container, IntoOpt, Run, Widget};
 use crate::sys;
 #[allow(unused_imports)]
 use crate::types::*;
 use core::marker::PhantomData;
 
-/// What an option setter accepts for a field type: the type itself, or the
-/// value inside an `Option` (`.icon(icons::PLUS)` sets `Some`).
-pub trait OptArg: Sized {
-    type In;
-    fn from_arg(v: Self::In) -> Self;
-}
-
-macro_rules! opt_arg_self {
-    ($($t:ty),*) => {$(
-        impl OptArg for $t {
-            type In = $t;
-            fn from_arg(v: $t) -> $t { v }
-        }
-    )*};
-}
-opt_arg_self!(bool, f32, f64, i32, Size, Color, Font, Texture, Id);
-
-impl<'a, T: ?Sized> OptArg for Option<&'a T> {
-    type In = &'a T;
-    fn from_arg(v: &'a T) -> Self {
-        Some(v)
-    }
-}
-
-/// Defines an options builder whose fields map one to one onto a C options
-/// struct. Fields after `;` are declared but filled in by the component
-/// (slices that become a pointer and a count).
+/// Defines an options struct whose fields map one to one onto a C options
+/// struct, with setters on it and on the builders that carry it. Fields
+/// after `;` get setters but are filled in by the component (slices that
+/// become a pointer and a count).
 macro_rules! options {
     (
         $(#[$m:meta])*
@@ -59,20 +38,6 @@ macro_rules! options {
             pub fn new() -> Self {
                 Self::default()
             }
-            $(
-                $(#[$fm])*
-                pub fn $f(mut self, v: <$t as OptArg>::In) -> Self {
-                    self.$f = OptArg::from_arg(v);
-                    self
-                }
-            )*
-            $( $(
-                $(#[$em])*
-                pub fn $ef(mut self, v: <$et as OptArg>::In) -> Self {
-                    self.$ef = OptArg::from_arg(v);
-                    self
-                }
-            )* )?
 
             #[allow(unused_variables)]
             pub(crate) fn raw(&self, a: &mut Arena) -> sys::$c {
@@ -81,6 +46,37 @@ macro_rules! options {
                     ..Default::default()
                 }
             }
+        }
+
+        setters!(opts ['a] $name<'a>; { $( $(#[$fm])* $f: $t, )* $( $( $(#[$em])* $ef: $et, )* )? });
+        setters!(ui ['u, 'f, 'a, C: Run<$name<'a>>] Widget<'u, 'f, $name<'a>, C>;
+            { $( $(#[$fm])* $f: $t, )* $( $( $(#[$em])* $ef: $et, )* )? });
+        setters!(ui ['u, 'f, 'a, C] Container<'u, 'f, $name<'a>, C>;
+            { $( $(#[$fm])* $f: $t, )* $( $( $(#[$em])* $ef: $et, )* )? });
+    };
+}
+
+macro_rules! setters {
+    (opts [$($g:tt)*] $ty:ty; { $( $(#[$fm:meta])* $f:ident : $t:ty, )* }) => {
+        impl<$($g)*> $ty {
+            $(
+                $(#[$fm])*
+                pub fn $f(mut self, v: impl IntoOpt<$t>) -> Self {
+                    self.$f = v.into_opt();
+                    self
+                }
+            )*
+        }
+    };
+    (ui [$($g:tt)*] $ty:ty; { $( $(#[$fm:meta])* $f:ident : $t:ty, )* }) => {
+        impl<$($g)*> $ty {
+            $(
+                $(#[$fm])*
+                pub fn $f(mut self, v: impl IntoOpt<$t>) -> Self {
+                    self.opts.$f = v.into_opt();
+                    self
+                }
+            )*
         }
     };
 }
@@ -115,13 +111,6 @@ options! {
         clip: bool,
         /// 0 means fully opaque.
         opacity: f32,
-    }
-}
-
-impl BoxOpts<'_> {
-    /// `width(Size::FILL).height(Size::FILL)`
-    pub fn fill(self) -> Self {
-        self.width(Size::FILL).height(Size::FILL)
     }
 }
 
@@ -199,21 +188,6 @@ options! {
     }
 }
 
-impl ButtonOpts<'_> {
-    pub fn primary(self) -> Self {
-        self.variant(ButtonVariant::Primary)
-    }
-    pub fn danger(self) -> Self {
-        self.variant(ButtonVariant::Danger)
-    }
-    pub fn ghost(self) -> Self {
-        self.variant(ButtonVariant::Ghost)
-    }
-    pub fn outline(self) -> Self {
-        self.variant(ButtonVariant::Outline)
-    }
-}
-
 options! {
     SegmentedOpts => cui_segmented_opts {
         size: ControlSize,
@@ -273,6 +247,15 @@ options! {
         prefix: Option<&'a str>,
         /// Muted text after the value, e.g. "kg".
         suffix: Option<&'a str>,
+    }
+}
+
+options! {
+    TagOpts => cui_tag_opts {
+        label: Option<&'a str>,
+        placeholder: Option<&'a str>,
+        max_tags: i32,
+        width: Size,
     }
 }
 

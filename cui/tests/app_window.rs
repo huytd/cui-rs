@@ -2,7 +2,7 @@
 //! default: `cargo test -- --ignored`.
 #![cfg(feature = "app")]
 
-use cui::*;
+use cui::prelude::*;
 
 #[test]
 #[ignore = "needs a display"]
@@ -11,9 +11,9 @@ fn hidden_window_renders_and_quits() {
     let mut app = App::new(&desc).expect("window");
     let mut frames = 0;
     while let Some(mut ui) = app.frame() {
-        ui.column_with(BoxOpts::new().pad(24.0).fill().bg(Color::BACKGROUND), |ui| {
+        ui.column().pad(24).fill().bg(Color::BACKGROUND).show(|ui| {
             ui.heading("Window", 2);
-            ui.button_with("Primary", ButtonOpts::new().primary());
+            ui.button("Primary").primary();
         });
         frames += 1;
         if frames == 5 {

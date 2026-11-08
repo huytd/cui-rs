@@ -1,4 +1,5 @@
 use crate::arena::Arena;
+use crate::builder::IdKey;
 use crate::sys;
 use crate::types::*;
 use core::ffi::{c_char, CStr};
@@ -31,10 +32,6 @@ impl<'f> Ui<'f> {
 
     pub(crate) fn s(&mut self, s: &str) -> *const c_char {
         self.arena.str(s)
-    }
-
-    pub(crate) fn os(&mut self, s: Option<&str>) -> *const c_char {
-        self.arena.opt_str(s)
     }
 
     pub(crate) fn strs(&mut self, items: &[&str]) -> *const *const c_char {
@@ -172,17 +169,10 @@ impl<'f> Ui<'f> {
         let p = self.s(s);
         Id(unsafe { sys::cui_make_id(self.ctx, p) })
     }
-    /// Runs `f` inside an id scope, so repeated items get distinct identities.
-    pub fn id_scope<R>(&mut self, id: &str, f: impl FnOnce(&mut Self) -> R) -> R {
-        let p = self.s(id);
-        unsafe { sys::cui_push_id(self.ctx, p) };
-        let r = f(self);
-        unsafe { sys::cui_pop_id(self.ctx) };
-        r
-    }
-    /// [`Ui::id_scope`] keyed by a number, for loops.
-    pub fn id_scope_int<R>(&mut self, id: i32, f: impl FnOnce(&mut Self) -> R) -> R {
-        unsafe { sys::cui_push_id_int(self.ctx, id) };
+    /// Runs `f` inside an id scope, so repeated items get distinct
+    /// identities. The key is a string or an integer: `ui.id_scope(i, |ui| ...)`.
+    pub fn id_scope<R>(&mut self, key: impl IdKey, f: impl FnOnce(&mut Self) -> R) -> R {
+        key.push(self);
         let r = f(self);
         unsafe { sys::cui_pop_id(self.ctx) };
         r
