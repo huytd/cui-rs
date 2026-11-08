@@ -37,5 +37,11 @@ jobs:
           submodules: true
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y libclang-dev libx11-dev
-      - run: cargo xtask check
+      - name: cargo xtask check
+        run: |
+          if ! cargo xtask check; then
+            cargo xtask bindgen
+            git diff
+            exit 1
+          fi
       - run: cargo test -p cui-rs --features bindgen

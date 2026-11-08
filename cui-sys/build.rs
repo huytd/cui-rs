@@ -74,7 +74,7 @@ fn main() {
         match backend {
             "win32" => {
                 sources.push("src/platform/cui_app_win32.c".into());
-                for lib in ["user32", "gdi32", "opengl32", "shell32", "imm32", "dwmapi", "comdlg32", "ole32"] {
+                for lib in ["user32", "gdi32", "opengl32", "shell32", "imm32", "dwmapi", "comdlg32", "ole32", "advapi32"] {
                     println!("cargo:rustc-link-lib={lib}");
                 }
             }
