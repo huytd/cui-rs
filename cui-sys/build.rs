@@ -39,9 +39,11 @@ fn main() {
         build.std("c99").flag_if_supported("-ffunction-sections").flag_if_supported("-fdata-sections");
     }
 
+    // The emoji table needs the decompressor even without the embedded fonts
+    // (upstream CMake only adds it with CUI_DEFAULT_FONTS).
+    sources.push("src/cui_inflate.c".into());
     if feat("default-fonts") {
         sources.push("src/cui_font_data.c".into());
-        sources.push("src/cui_inflate.c".into());
     } else {
         build.define("CUI_NO_DEFAULT_FONTS", None);
     }

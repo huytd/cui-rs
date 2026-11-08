@@ -11,6 +11,7 @@ pub fn cui_bindgen_builder(crate_dir: &std::path::Path) -> bindgen::Builder {
         .allowlist_var("CUI_.*")
         // va_list differs per target; the variadic and plain forms cover it.
         .blocklist_function(".*appendv")
+        .blocklist_type("va_list|__gnuc_va_list")
         .use_core()
         .ctypes_prefix("::core::ffi")
         .prepend_enum_name(false)
