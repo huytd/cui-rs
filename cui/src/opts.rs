@@ -111,6 +111,8 @@ options! {
         clip: bool,
         /// 0 means fully opaque.
         opacity: f32,
+        /// Reading direction, inherited by children.
+        direction: Direction,
     }
 }
 
@@ -164,6 +166,7 @@ options! {
         width: Size,
         /// Multiplier, default 1.45.
         line_height: f32,
+        direction: Direction,
     }
 }
 

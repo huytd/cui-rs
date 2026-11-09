@@ -285,3 +285,27 @@ fn kitchen_sink_renders() {
         h.save_png(&format!("{dir}/kitchen_sink.png"));
     }
 }
+
+#[test]
+fn rtl_row_mirrors_its_children() {
+    let first_x = |direction: Direction| {
+        let mut h = Headless::new(400.0, 200.0, 1.0);
+        let mut xs = (0.0, 0.0);
+        for _ in 0..2 {
+            h.frame(DT, |ui| {
+                ui.row().fill_width().gap(8).direction(direction).show(|ui| {
+                    ui.button("one");
+                    let a = ui.last_rect().x;
+                    ui.button("two");
+                    xs = (a, ui.last_rect().x);
+                });
+            });
+        }
+        xs
+    };
+    let (a, b) = first_x(Direction::Ltr);
+    assert!(a < b, "LTR: first child should be on the left ({a} vs {b})");
+    let (a, b) = first_x(Direction::Rtl);
+    assert!(a > b, "RTL: first child should be on the right ({a} vs {b})");
+    assert_eq!(TextAlign::default(), TextAlign::Start);
+}

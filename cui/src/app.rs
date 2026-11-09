@@ -8,7 +8,7 @@ use std::ffi::CString;
 
 c_enum! {
     pub enum RendererKind: cui_renderer_kind {
-        /// OpenGL, falling back to software.
+        /// OpenGL, or software when there is no GPU (CPU-drawn OpenGL, X11 and Win32).
         Auto = CUI_RENDERER_AUTO,
         OpenGl = CUI_RENDERER_OPENGL,
         Software = CUI_RENDERER_SOFTWARE,
@@ -34,6 +34,7 @@ pub struct AppDesc {
     pub fixed_size: bool,
     /// Render every frame even when idle (games, video).
     pub continuous: bool,
+    /// OpenGL: do not wait for the display; frames are capped at 120 Hz or the refresh rate.
     pub no_vsync: bool,
     /// Create the window hidden (tests).
     pub hidden: bool,

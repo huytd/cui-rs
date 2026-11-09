@@ -63,6 +63,11 @@ impl<'f> Ui<'f> {
     pub fn request_redraw(&mut self) {
         unsafe { sys::cui_request_redraw(self.ctx) }
     }
+    /// Ask for a frame within `seconds` even with no input, for content that
+    /// changes on a timer (a clock, polling). The app sleeps in between.
+    pub fn request_wakeup(&mut self, seconds: f32) {
+        unsafe { sys::cui_request_wakeup(self.ctx, seconds) }
+    }
 
     // ---- input queries ----
 

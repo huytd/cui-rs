@@ -73,9 +73,9 @@ pub use opts::*;
 pub use overlay::{Command, ToastHandle};
 pub use text_buffer::TextBuffer;
 pub use types::{
-    Accent, Align, ButtonVariant, Color, ControlSize, Cursor, Date, Dir, Elevation, Font, Id, InputEvents,
-    Justify, Key, Mods, MouseButton, Placement, Rect, Side, Size, TabsVariant, TextAlign, Texture, ThemeMode,
-    Tone, Token, Vec2,
+    Accent, Align, ButtonVariant, Color, ControlSize, Cursor, Date, Dir, Direction, Elevation, Font, Id,
+    InputEvents, Justify, Key, Mods, MouseButton, Placement, Rect, Side, Size, TabsVariant, TextAlign, Texture,
+    ThemeMode, Tone, Token, Vec2,
 };
 pub use ui::Ui;
 
@@ -112,16 +112,16 @@ pub mod prelude {
     #[cfg(feature = "app")]
     pub use crate::{App, AppDesc};
     pub use crate::{
-        icons, text, Accent, Align, ButtonVariant, Color, Column, Command, ControlSize, Date, Dir, Elevation, Font,
-        Justify, Key, Mods, MouseButton, Placement, Series, Side, Size, TableSort, TabsVariant, TextAlign, TextBuffer,
-        ThemeMode, Tone, Token, Ui, FILL,
+        icons, text, Accent, Align, ButtonVariant, Color, Column, Command, ControlSize, Date, Dir, Direction, Elevation,
+        Font, Justify, Key, Mods, MouseButton, Placement, Series, Side, Size, TableSort, TabsVariant, TextAlign,
+        TextBuffer, ThemeMode, Tone, Token, Ui, FILL,
     };
 }
 
 #[cfg(feature = "app")]
 pub use app::{open_url, App, AppDesc, Error, FileDialog, FileDialogKind, RendererKind};
 
-/// Version of the CUI C library this crate is built on, e.g. "1.1.0".
+/// Version of the CUI C library this crate is built on, e.g. "1.3.0".
 pub fn cui_version() -> &'static str {
     let v = sys::CUI_VERSION_STRING;
     core::str::from_utf8(&v[..v.len() - 1]).unwrap_or("")

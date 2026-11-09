@@ -136,7 +136,29 @@ c_enum! {
 }
 
 c_enum! {
-    pub enum TextAlign: cui_text_align { Left = CUI_TEXT_LEFT, Center = CUI_TEXT_CENTER, Right = CUI_TEXT_RIGHT }
+    /// Horizontal text alignment. `Start` and `End` follow the reading
+    /// direction; `Left` and `Right` stay put under right-to-left layout.
+    pub enum TextAlign: cui_text_align {
+        /// Left in a left-to-right box, right in a right-to-left one.
+        Start = CUI_TEXT_START,
+        Center = CUI_TEXT_CENTER,
+        End = CUI_TEXT_END,
+        Left = CUI_TEXT_LEFT,
+        Right = CUI_TEXT_RIGHT,
+    }
+}
+
+c_enum! {
+    /// Reading direction of a container or text. Under `Rtl`, rows, alignment,
+    /// padding, grids and directional icons mirror.
+    pub enum Direction: cui_direction {
+        /// The parent's direction.
+        Inherit = CUI_DIRECTION_INHERIT,
+        Ltr = CUI_DIRECTION_LTR,
+        Rtl = CUI_DIRECTION_RTL,
+        /// From the first strong character (left to right without text shaping).
+        Auto = CUI_DIRECTION_AUTO,
+    }
 }
 
 c_enum! {
